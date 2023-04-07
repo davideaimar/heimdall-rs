@@ -1,19 +1,23 @@
-use std::{panic};
+use std::{panic, io};
 use backtrace::Backtrace;
 
 mod cfg;
+mod dump;
 mod decode;
 mod decompile;
 
 use clap::{Parser, Subcommand};
 
 use colored::Colorize;
+use crossterm::{terminal::{disable_raw_mode, LeaveAlternateScreen}, execute, event::DisableMouseCapture};
 use heimdall_config::{config, get_config, ConfigArgs};
 use heimdall_cache::{cache, CacheArgs};
 use heimdall_common::{ether::evm::disassemble::*, io::{logging::Logger}};
 use decompile::{decompile, DecompilerArgs};
 use decode::{decode, DecodeArgs};
+use dump::{dump, DumpArgs};
 use cfg::{cfg, CFGArgs};
+use tui::{backend::CrosstermBackend, Terminal};
 
 #[derive(Debug, Parser)]
 #[clap(
@@ -51,6 +55,9 @@ pub enum Subcommands {
 
     #[clap(name = "cache", about = "Manage heimdall-rs' cached files")]
     Cache(CacheArgs),
+
+    #[clap(name = "dump", about = "Dump the value of all storage slots accessed by a contract")]
+    Dump(DumpArgs),
 }
 
 fn main() {
@@ -59,6 +66,16 @@ fn main() {
     // handle catching panics with
     panic::set_hook(
         Box::new(|panic_info| {
+            
+            // cleanup the terminal
+            let stdout = io::stdout();
+            let backend = CrosstermBackend::new(stdout);
+            let mut terminal = Terminal::new(backend).unwrap();
+            disable_raw_mode().unwrap();
+            execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture).unwrap();
+            terminal.show_cursor().unwrap();
+
+            // print the panic message
             let backtrace = Backtrace::new();
             let (logger, _)= Logger::new("TRACE");
             logger.fatal(
@@ -78,12 +95,9 @@ fn main() {
         Subcommands::Disassemble(mut cmd) => {
             
             // if the user has not specified a rpc url, use the default
-            match cmd.rpc_url.as_str() {
-                "" => {
-                    cmd.rpc_url = configuration.rpc_url;
-                }
-                _ => {}
-            };
+            if cmd.rpc_url.as_str() == "" {
+                cmd.rpc_url = configuration.rpc_url;
+            }
 
             disassemble(cmd);
         }
@@ -92,12 +106,9 @@ fn main() {
         Subcommands::Decompile(mut cmd) => {
             
             // if the user has not specified a rpc url, use the default
-            match cmd.rpc_url.as_str() {
-                "" => {
-                    cmd.rpc_url = configuration.rpc_url;
-                }
-                _ => {}
-            };
+            if cmd.rpc_url.as_str() == "" {
+                cmd.rpc_url = configuration.rpc_url;
+            }
 
             decompile(cmd);
         }
@@ -106,12 +117,14 @@ fn main() {
         Subcommands::Decode(mut cmd) => {
             
             // if the user has not specified a rpc url, use the default
-            match cmd.rpc_url.as_str() {
-                "" => {
-                    cmd.rpc_url = configuration.rpc_url;
-                }
-                _ => {}
-            };
+            if cmd.rpc_url.as_str() == "" {
+                cmd.rpc_url = configuration.rpc_url;
+            }
+
+            // if the user has not specified a openai api key, use the default
+            if cmd.openai_api_key.as_str() == "" {
+                cmd.openai_api_key = configuration.openai_api_key;
+            }
 
             decode(cmd);
         }
@@ -120,14 +133,27 @@ fn main() {
         Subcommands::CFG(mut cmd) => {
             
             // if the user has not specified a rpc url, use the default
-            match cmd.rpc_url.as_str() {
-                "" => {
-                    cmd.rpc_url = configuration.rpc_url;
-                }
-                _ => {}
-            };
+            if cmd.rpc_url.as_str() == "" {
+                cmd.rpc_url = configuration.rpc_url;
+            }
 
             cfg(cmd);
+        }
+
+        
+        Subcommands::Dump(mut cmd) => {
+
+            // if the user has not specified a rpc url, use the default
+            if cmd.rpc_url.as_str() == "" {
+                cmd.rpc_url = configuration.rpc_url;
+            }
+
+            // if the user has not specified a transpose api key, use the default
+            if cmd.transpose_api_key.as_str() == "" {
+                cmd.transpose_api_key = configuration.transpose_api_key;
+            }
+            
+            dump(cmd);
         }
 
 
@@ -139,7 +165,5 @@ fn main() {
         Subcommands::Cache(cmd) => {
             _ = cache(cmd);
         }
-        
-
     }
 }

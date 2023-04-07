@@ -35,6 +35,9 @@ pub enum Subcommands {
 
     #[clap(name = "ls", about = "Lists all cached objects in ~/.bifrost/cache")]
     Ls(NoArguments),
+
+    #[clap(name = "size", about = "Prints the size of the cache in ~/.bifrost/cache")]
+    Size(NoArguments),
 }
 
 
@@ -66,7 +69,7 @@ pub fn clear_cache() {
 pub fn exists(key: &str) -> bool {
     let home = home_dir().unwrap();
     let cache_dir = home.join(".bifrost").join("cache");
-    let cache_file = cache_dir.join(format!("{}.bin", key));
+    let cache_file = cache_dir.join(format!("{key}.bin"));
 
     cache_file.exists()
 }
@@ -79,13 +82,13 @@ pub fn keys(pattern: &str) -> Vec<String> {
     let mut keys = Vec::new();
 
     // remove wildcard
-    let pattern = pattern.replace("*", "");
+    let pattern = pattern.replace('*', "");
 
     for entry in cache_dir.read_dir().unwrap() {
         let entry = entry.unwrap();
         let path = entry.path();
         let key = path.file_name().unwrap().to_str().unwrap().to_string();
-        if pattern.len() == 0 || key.contains(&pattern) {
+        if pattern.is_empty() || key.contains(&pattern) {
             keys.push(key.replace(".bin", ""));
         }
     }
@@ -101,7 +104,7 @@ pub fn keys(pattern: &str) -> Vec<String> {
 pub fn delete_cache(key: &str) {
     let home = home_dir().unwrap();
     let cache_dir = home.join(".bifrost").join("cache");
-    let cache_file = cache_dir.join(format!("{}.bin", key));
+    let cache_file = cache_dir.join(format!("{key}.bin"));
 
     if cache_file.exists() {
         std::fs::remove_file(cache_file).unwrap();
@@ -147,7 +150,7 @@ pub fn check_expiry<T>() -> bool where T: DeserializeOwned {
 pub fn read_cache<T>(key: &str) -> Option<T> where T: 'static + DeserializeOwned {
     let home = home_dir().unwrap();
     let cache_dir = home.join(".bifrost").join("cache");
-    let cache_file = cache_dir.join(format!("{}.bin", key));
+    let cache_file = cache_dir.join(format!("{key}.bin"));
 
     let binary_string = match read_file(&cache_file.to_str().unwrap().to_string()) {
         Some(s) => s,
@@ -172,7 +175,7 @@ pub fn read_cache<T>(key: &str) -> Option<T> where T: 'static + DeserializeOwned
 pub fn store_cache<T>(key: &str, value: T, expiry: Option<u64>) where T: Serialize {
     let home = home_dir().unwrap();
     let cache_dir = home.join(".bifrost").join("cache");
-    let cache_file = cache_dir.join(format!("{}.bin", key));
+    let cache_file = cache_dir.join(format!("{key}.bin"));
 
     // expire in 90 days
     let expiry = expiry.unwrap_or(
@@ -188,7 +191,7 @@ pub fn store_cache<T>(key: &str, value: T, expiry: Option<u64>) where T: Seriali
     write_file(&cache_file.to_str().unwrap().to_string(), &binary_string);
 }
 
-
+#[allow(deprecated)]
 pub fn cache(args: CacheArgs) -> Result<(), Box<dyn std::error::Error>> {
     match args.sub {
         Subcommands::Clean(_) => {
@@ -200,10 +203,24 @@ pub fn cache(args: CacheArgs) -> Result<(), Box<dyn std::error::Error>> {
             println!("Displaying {} cached objects:", keys.len());
 
             for (i, key) in keys.iter().enumerate() {
-                println!("{i:>5} : {}", key);
+                println!("{i:>5} : {key}");
+            }
+        },
+        Subcommands::Size(_) => {
+            let home = home_dir().unwrap();
+            let cache_dir = home.join(".bifrost").join("cache");
+            let mut size = 0;
+
+            for entry in cache_dir.read_dir().unwrap() {
+                let entry = entry.unwrap();
+                let path = entry.path();
+                let metadata = std::fs::metadata(path).unwrap();
+                size += metadata.len();
             }
 
-        },
+            println!("Cached objects: {}", keys("*").len());
+            println!("Cache size: {}", prettify_bytes(size));
+        }
     }
    
     Ok(())
